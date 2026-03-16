@@ -17,7 +17,7 @@
 
 ### **在线体验**
 
-您可以直接访问：\[https://zhengyici.github.io/kmp-visualizer/\]
+您可以直接访问：[https://zhengyici.github.io/kmp-visualizer/]
 
 ### **本地运行**
 
