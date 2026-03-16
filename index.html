@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KMP 算法可视化 (含 NextVal 优化修复版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .cell {
+            transition: all 0.3s ease;
+        }
+        .highlight-prefix { background-color: #fef08a; border-color: #eab308; }
+        .highlight-suffix { background-color: #bfdbfe; border-color: #3b82f6; }
+        .highlight-match { background-color: #bbf7d0; border-color: #22c55e; }
+        .highlight-fail { background-color: #fecaca; border-color: #ef4444; }
+        .pointer { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen p-4 md:p-8 font-sans">
+    <div class="max-w-5xl mx-auto">
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl font-bold text-slate-800">KMP 算法：Next 与 NextVal 可视化</h1>
+            <p class="text-slate-600 mt-2">动态对比传统 Next 数组与深度优化的 NextVal 数组</p>
+        </header>
+
+        <!-- 核心控制区 -->
+        <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">主串 (Text)</label>
+                    <input id="txtInput" type="text" value="ABABDABACDABABC" class="mt-1 block w-full px-3 py-2 border rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">模式串 (Pattern)</label>
+                    <input id="patInput" type="text" value="AAAAAB" class="mt-1 block w-full px-3 py-2 border rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+            </div>
+            
+            <div class="flex flex-wrap gap-2 justify-center">
+                <button onclick="initNextStep()" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition">演示 Next 数组生成</button>
+                <button onclick="initNextValStep()" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">演示 NextVal 优化</button>
+                <button onclick="initMatchStep()" class="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition">演示 KMP 匹配 (使用 NextVal)</button>
+                <button onclick="reset()" class="px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 transition">重置</button>
+            </div>
+        </div>
+
+        <!-- 可视化画布 -->
+        <div id="visualizer" class="bg-white rounded-xl shadow-lg p-6 min-h-[450px] flex flex-col justify-center overflow-x-auto">
+            <div id="statusText" class="text-center mb-8 text-lg font-medium text-indigo-700 h-8">
+                请输入字符串并选择演示模式
+            </div>
+
+            <!-- 数据展示区 -->
+            <div class="relative py-8" id="displayArea">
+                <!-- 这里由 JS 动态生成内容 -->
+            </div>
+
+            <!-- 解释说明 -->
+            <div id="explanation" class="mt-8 p-4 bg-slate-50 border-l-4 border-indigo-500 text-slate-700 text-sm leading-relaxed">
+                KMP 算法通过预处理模式串，找到每个子串的最长相等前后缀，从而在匹配失败时跳过不必要的比较。
+            </div>
+        </div>
+        
+        <!-- 步骤控制 -->
+        <div class="mt-6 flex justify-center items-center gap-6">
+            <button id="prevBtn" disabled onclick="stepBackward()" class="p-2 rounded-full border bg-white shadow hover:bg-slate-50 disabled:opacity-30">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <div id="stepCounter" class="text-slate-500 font-mono">Step: 0</div>
+            <button id="nextBtn" disabled onclick="stepForward()" class="p-2 rounded-full border bg-white shadow hover:bg-slate-50 disabled:opacity-30">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let currentState = {
+            mode: 'idle',
+            steps: [],
+            currentStepIdx: -1,
+            txt: "",
+            pat: "",
+            nextArr: [],
+            nextValArr: []
+        };
+
+        const displayArea = document.getElementById('displayArea');
+        const statusText = document.getElementById('statusText');
+        const explanation = document.getElementById('explanation');
+        const stepCounter = document.getElementById('stepCounter');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+
+        function reset() { location.reload(); }
+
+        // --- 核心算法逻辑 ---
+        function getNextArray(p) {
+            let n = p.length;
+            let next = new Array(n).fill(0);
+            let j = 0;
+            for (let i = 1; i < n; i++) {
+                while (j > 0 && p[i] !== p[j]) j = next[j - 1];
+                if (p[i] === p[j]) j++;
+                next[i] = j;
+            }
+            return next;
+        }
+
+        function generateNextSteps(p) {
+            let steps = [];
+            let n = p.length;
+            let next = new Array(n).fill(0);
+            steps.push({ next: [...next], i: 1, j: 0, msg: "初始化：next[0] = 0。", highlight: { i: 1, j: 0 } });
+            let j = 0;
+            for (let i = 1; i < n; i++) {
+                while (j > 0 && p[i] !== p[j]) {
+                    let oldJ = j;
+                    j = next[j - 1];
+                    steps.push({ next: [...next], i, j, msg: `字符失配，j 从 ${oldJ} 回退到 next[${oldJ}-1] = ${j}`, highlight: { i, j, fail: true } });
+                }
+                if (p[i] === p[j]) {
+                    j++;
+                    steps.push({ next: [...next], i, j, msg: `字符匹配成功！当前长度 ${j}`, highlight: { i, j: j-1, success: true } });
+                }
+                next[i] = j;
+                steps.push({ next: [...next], i, j, msg: `确定 next[${i}] = ${j}`, highlight: { i, activeNext: i } });
+            }
+            return steps;
+        }
+
+        // --- 修正后的 NextVal 算法逻辑 ---
+        function generateNextValSteps(p, next) {
+            let steps = [];
+            let n = p.length;
+            let nextVal = new Array(n).fill(0);
+            
+            // nextVal[0] 始终为 0
+            nextVal[0] = 0;
+            steps.push({
+                next, nextVal: [...nextVal], i: 0,
+                msg: "nextVal[0] 始终设为 0。",
+                highlight: { i: 0 }
+            });
+
+            for (let i = 1; i < n; i++) {
+                let jumpPos = next[i-1]; // 传统 KMP 失配时 j 会跳到的下标（如果是基于长度1的定义，这里需要转换）
+                // 我们的 next 是长度。当 p[i] 匹配失败时，j 会跳转到 next[i-1]。
+                // 如果 p[i] == p[next[i-1]]，说明跳转后的位置也会失败。
+                
+                let targetIdx = next[i-1]; 
+                
+                if (p[i] === p[targetIdx]) {
+                    // 核心：继承目标位置的 nextVal
+                    nextVal[i] = nextVal[targetIdx];
+                    steps.push({
+                        next, nextVal: [...nextVal], i,
+                        msg: `优化：p[${i}]('${p[i]}') 与跳转目标 p[${targetIdx}] 相同。继承其优化值 nextVal[${targetIdx}] = ${nextVal[targetIdx]}`,
+                        highlight: { i, target: targetIdx, optimize: true }
+                    });
+                } else {
+                    nextVal[i] = next[i-1];
+                    steps.push({
+                        next, nextVal: [...nextVal], i,
+                        msg: `保持：p[${i}] 与跳转目标不同，直接使用 next[${i-1}] = ${next[i-1]}`,
+                        highlight: { i, keep: true }
+                    });
+                }
+            }
+            return steps;
+        }
+
+        function generateMatchSteps(t, p, nextVal) {
+            let steps = [];
+            let i = 0, j = 0;
+            while (i < t.length) {
+                if (t[i] === p[j]) {
+                    steps.push({ i, j, msg: `匹配成功：'${t[i]}'`, highlight: { i, j, success: true } });
+                    i++; j++;
+                    if (j === p.length) {
+                        steps.push({ i: i-1, j: j-1, msg: `发现匹配项！`, highlight: { found: true, start: i - j, end: i - 1 } });
+                        j = nextVal[j - 1];
+                    }
+                } else {
+                    if (j !== 0) {
+                        let oldJ = j;
+                        j = nextVal[j]; // 注意：此处根据演示逻辑使用了 nextVal[j] 跳转
+                        steps.push({ i, j, msg: `失配！从 j=${oldJ} 直接跳到 j=${j} (避开了重复的字符)`, highlight: { i, j: oldJ, fail: true, jump: true } });
+                    } else {
+                        steps.push({ i, j, msg: `首位失配，i 右移`, highlight: { i, j, fail: true } });
+                        i++;
+                    }
+                }
+            }
+            return steps;
+        }
+
+        // --- 渲染逻辑 ---
+        function renderNextStep(step) {
+            const p = currentState.pat;
+            let html = `<div class="flex flex-col items-center space-y-6">
+                <div class="flex space-x-1">`;
+            for(let k=0; k<p.length; k++) {
+                let bgColor = (k === step.i) ? "bg-blue-100 border-blue-500 ring-2" : "bg-white";
+                if (k < step.j) bgColor = "bg-yellow-100 border-yellow-500";
+                if (k > step.i - step.j && k <= step.i) bgColor = "bg-indigo-100 border-indigo-500";
+                html += `<div class="cell w-12 h-12 border-2 rounded flex items-center justify-center font-bold text-xl ${bgColor}">${p[k]}</div>`;
+            }
+            html += `</div><div class="flex space-x-1">`;
+            for(let k=0; k<p.length; k++) {
+                let active = (k === step.highlight.activeNext) ? "bg-green-500 text-white scale-110" : "bg-slate-100 text-slate-400";
+                html += `<div class="w-12 h-12 border-2 rounded flex flex-col items-center justify-center font-mono text-xs ${active}">
+                    <span>idx:${k}</span><span>${step.next[k]}</span>
+                </div>`;
+            }
+            html += `</div></div>`;
+            displayArea.innerHTML = html;
+            statusText.innerText = step.msg;
+        }
+
+        function renderNextValStep(step) {
+            const p = currentState.pat;
+            let html = `<div class="flex flex-col items-center space-y-4">
+                <div class="flex space-x-1">`;
+            for(let k=0; k<p.length; k++) {
+                let bg = (k === step.i) ? "bg-purple-100 border-purple-500 ring-2" : "bg-white";
+                if (step.highlight.optimize && k === step.highlight.target) bg = "bg-amber-100 border-amber-500";
+                html += `<div class="cell w-12 h-12 border-2 rounded flex items-center justify-center font-bold text-xl ${bg}">${p[k]}</div>`;
+            }
+            html += `</div><div class="flex flex-col space-y-2">
+                <div class="flex space-x-1"><div class="w-20 text-xs flex items-center text-slate-400">Next:</div>`;
+            for(let k=0; k<p.length; k++) {
+                html += `<div class="w-12 h-10 border rounded flex items-center justify-center bg-slate-50 text-slate-400 font-mono">${step.next[k]}</div>`;
+            }
+            html += `</div><div class="flex space-x-1"><div class="w-20 text-xs flex items-center text-purple-600 font-bold">NextVal:</div>`;
+            for(let k=0; k<p.length; k++) {
+                let active = (k === step.i) ? "bg-purple-500 text-white scale-105" : "bg-white";
+                html += `<div class="w-12 h-10 border-2 rounded flex items-center justify-center font-bold font-mono ${active}">${step.nextVal[k]}</div>`;
+            }
+            html += `</div></div></div>`;
+            displayArea.innerHTML = html;
+            statusText.innerText = step.msg;
+        }
+
+        function renderMatchStep(step) {
+            const t = currentState.txt;
+            const p = currentState.pat;
+            let html = `<div class="flex flex-col items-center w-full space-y-8">
+                <div class="flex space-x-1">`;
+            for(let k=0; k<t.length; k++) {
+                let bg = (k === step.i) ? (step.highlight.success ? "bg-green-100 border-green-500" : "bg-red-100 border-red-500") : "bg-white";
+                if (step.highlight.found && k >= step.highlight.start && k <= step.highlight.end) bg = "bg-green-500 text-white border-green-600";
+                html += `<div class="w-10 h-10 border rounded flex items-center justify-center font-bold ${bg}">${t[k]}</div>`;
+            }
+            html += `</div><div class="flex space-x-1" style="transform: translateX(${(step.i - step.j) * 44}px); transition: transform 0.5s ease;">`;
+            for(let k=0; k<p.length; k++) {
+                let bg = (k === step.j) ? (step.highlight.success ? "bg-green-100 border-green-500" : "bg-red-100 border-red-500") : "bg-white";
+                html += `<div class="w-10 h-10 border rounded flex flex-col items-center justify-center font-bold ${bg}">
+                    <span class="text-[9px] opacity-40">${k}</span><span>${p[k]}</span>
+                </div>`;
+            }
+            html += `</div></div>`;
+            displayArea.innerHTML = html;
+            statusText.innerText = step.msg;
+        }
+
+        // --- 交互入口 ---
+        function initNextStep() {
+            currentState.pat = document.getElementById('patInput').value.trim();
+            if (!currentState.pat) return;
+            currentState.mode = 'next';
+            currentState.steps = generateNextSteps(currentState.pat);
+            currentState.currentStepIdx = 0;
+            updateUI();
+            explanation.innerHTML = "<strong>Next 数组计算：</strong> 寻找子串中“相等且最长”的前缀和后缀长度。";
+        }
+
+        function initNextValStep() {
+            currentState.pat = document.getElementById('patInput').value.trim();
+            if (!currentState.pat) return;
+            const next = getNextArray(currentState.pat);
+            currentState.mode = 'nextval';
+            currentState.steps = generateNextValSteps(currentState.pat, next);
+            currentState.currentStepIdx = 0;
+            updateUI();
+            explanation.innerHTML = "<strong>NextVal 优化逻辑：</strong> 修正了计算逻辑。如果 p[i] == p[next[i-1]]，说明该位置即便跳转也会失配，所以直接引用目标位置的 nextval 成果。对于模式串 AAAAA，你会看到只有第一个位置是0，后面全部继承了0。";
+        }
+
+        function initMatchStep() {
+            currentState.txt = document.getElementById('txtInput').value.trim();
+            currentState.pat = document.getElementById('patInput').value.trim();
+            if (!currentState.txt || !currentState.pat) return;
+            const next = getNextArray(currentState.pat);
+            
+            // 预计算准确的 nextVal 用于演示跳转
+            let nextVal = new Array(next.length).fill(0);
+            for(let i=1; i<next.length; i++){
+                let target = next[i-1];
+                if(currentState.pat[i] === currentState.pat[target]) nextVal[i] = nextVal[target];
+                else nextVal[i] = next[i-1];
+            }
+
+            currentState.mode = 'match';
+            currentState.steps = generateMatchSteps(currentState.txt, currentState.pat, nextVal);
+            currentState.currentStepIdx = 0;
+            updateUI();
+            explanation.innerHTML = "<strong>匹配过程：</strong> 观察失配时的 j 指针。在 AAAAAB 这种串中，NextVal 能让 j 一次性回退到最开头，而不是一级一级回退。";
+        }
+
+        function updateUI() {
+            if (currentState.currentStepIdx < 0) return;
+            const step = currentState.steps[currentState.currentStepIdx];
+            if (currentState.mode === 'next') renderNextStep(step);
+            else if (currentState.mode === 'nextval') renderNextValStep(step);
+            else renderMatchStep(step);
+            
+            stepCounter.innerText = `步数: ${currentState.currentStepIdx + 1} / ${currentState.steps.length}`;
+            prevBtn.disabled = currentState.currentStepIdx === 0;
+            nextBtn.disabled = currentState.currentStepIdx === currentState.steps.length - 1;
+        }
+
+        function stepForward() { if (currentState.currentStepIdx < currentState.steps.length - 1) { currentState.currentStepIdx++; updateUI(); } }
+        function stepBackward() { if (currentState.currentStepIdx > 0) { currentState.currentStepIdx--; updateUI(); } }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight') stepForward();
+            if (e.key === 'ArrowLeft') stepBackward();
+        });
+    </script>
+</body>
+</html>
