@@ -244,14 +244,15 @@
         function renderMatchStep(step) {
             const t = currentState.txt;
             const p = currentState.pat;
-            let html = `<div class="flex flex-col items-center w-full space-y-8">
-                <div class="flex space-x-1">`;
+            const offset = step.i - step.j;
+            let html = `<div class="flex flex-col items-center w-full space-y-8 overflow-x-auto" id="matchContainer">`;
+            html += `<div class="flex space-x-1" style="min-width: max-content;">`;
             for(let k=0; k<t.length; k++) {
                 let bg = (k === step.i) ? (step.highlight.success ? "bg-green-100 border-green-500" : "bg-red-100 border-red-500") : "bg-white";
                 if (step.highlight.found && k >= step.highlight.start && k <= step.highlight.end) bg = "bg-green-500 text-white border-green-600";
                 html += `<div class="w-10 h-10 border rounded flex items-center justify-center font-bold ${bg}">${t[k]}</div>`;
             }
-            html += `</div><div class="flex space-x-1" style="transform: translateX(${(step.i - step.j) * 44}px); transition: transform 0.5s ease;">`;
+            html += `</div><div class="flex space-x-1" style="transform: translateX(${offset * 44}px); transition: transform 0.5s ease; min-width: max-content;">`;
             for(let k=0; k<p.length; k++) {
                 let bg = (k === step.j) ? (step.highlight.success ? "bg-green-100 border-green-500" : "bg-red-100 border-red-500") : "bg-white";
                 html += `<div class="w-10 h-10 border rounded flex flex-col items-center justify-center font-bold ${bg}">
@@ -261,6 +262,14 @@
             html += `</div></div>`;
             displayArea.innerHTML = html;
             statusText.innerText = step.msg;
+            
+            requestAnimationFrame(() => {
+                const container = document.getElementById('matchContainer');
+                if (container) {
+                    const scrollTarget = Math.max(0, offset * 44 - 100);
+                    container.parentElement.scrollTo({ left: scrollTarget, behavior: 'smooth' });
+                }
+            });
         }
 
         // --- 交互入口 ---
