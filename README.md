@@ -22,7 +22,7 @@
 ### **本地运行**
 
 1. 克隆本项目：  
-   git clone \[https://github.com/您的用户名/kmp-visualizer.git\](https://github.com/您的用户名/kmp-visualizer.git)
+   git clone \[https://github.com/Zhengyici/kmp-visualizer.git\](https://github.com/Zhengyici/kmp-visualizer.git)
 
 2. 直接使用浏览器打开 index.html 即可运行。
 
@@ -45,5 +45,5 @@ Next 数组（前缀函数）记录了模式串中每一个子串的“相等且
 ## **贡献**
 
 如果您有任何优化建议（例如增加更多算法动画或优化布局），欢迎提交 Issue 或 Pull Request！  
-作者: \[您的名字\]  
+作者: \[CiQing\]  
 许可: MIT License
